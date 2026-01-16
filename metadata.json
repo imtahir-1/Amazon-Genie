@@ -1,0 +1,7 @@
+{
+  "name": "Amazon genie",
+  "description": "Professional Amazon Listing Creative Generator that analyzes products, researches competitors, and generates high-conversion visual assets and creative briefs.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
