@@ -15,29 +15,18 @@ const App: React.FC = () => {
       step: 'input',
       images: [],
       history: saved ? JSON.parse(saved) : [],
-      hasApiKey: false,
+      hasApiKey: true,
     };
   });
   
   const [viewingImage, setViewingImage] = useState<{ url: string, title: string } | null>(null);
 
   useEffect(() => {
-    const checkKey = async () => {
-      // @ts-ignore
-      const hasKey = await window.aistudio.hasSelectedApiKey();
-      setState(prev => ({ ...prev, hasApiKey: hasKey }));
-    };
-    checkKey();
-  }, []);
-
-  // Sync state to local storage whenever history changes
-  useEffect(() => {
     localStorage.setItem('listing_genius_history_v2', JSON.stringify(state.history));
   }, [state.history]);
 
-  // Sync current work back to history array automatically
   useEffect(() => {
-    if (state.activeHistoryId && state.step === 'results') {
+    if (state.activeHistoryId && state.step === 'results' && state.analysis) {
       setState(prev => {
         const historyIndex = prev.history.findIndex(h => h.id === prev.activeHistoryId);
         if (historyIndex === -1) return prev;
@@ -55,31 +44,30 @@ const App: React.FC = () => {
     }
   }, [state.images, state.analysis, state.referenceImage, state.activeHistoryId, state.step]);
 
-  const handleOpenKey = async () => {
-    // @ts-ignore
-    await window.aistudio.openSelectKey();
-    setState(prev => ({ ...prev, hasApiKey: true }));
-  };
-
-  const handleStartAnalysis = async (input: string, type: 'url' | 'asin' | 'image') => {
+  const handleStartAnalysis = async (data: { text: string, image: string, type: 'url' | 'asin' | 'image' | 'smart' }) => {
     setState(prev => ({ 
       ...prev, 
       step: 'analyzing', 
       error: undefined, 
-      inputSource: { type, value: input },
-      referenceImage: type === 'image' ? input : undefined 
+      inputSource: { type: data.type, value: data.text || data.image },
+      referenceImage: data.image || undefined 
     }));
     
     try {
-      const analysis = await GeminiService.analyzeProduct(input, type);
+      const analysis = await GeminiService.analyzeProduct({ text: data.text, image: data.image });
       const briefs = await GeminiService.generateListingBriefs(analysis);
-      const finalReference = type === 'image' ? input : (analysis.extractedImageUrls?.[0]);
+      
+      if (!briefs || briefs.length === 0) {
+        throw new Error("Analysis completed but no creative briefs were generated.");
+      }
+
+      const finalReference = data.image || (analysis.extractedImageUrls?.[0]);
       
       const newHistoryItem: HistoryItem = {
         id: Date.now().toString(),
         timestamp: Date.now(),
-        input,
-        type,
+        input: data.text || 'Image Input',
+        type: data.type,
         analysis,
         referenceImage: finalReference,
         images: briefs.map(b => ({ ...b, versions: [] }))
@@ -99,7 +87,7 @@ const App: React.FC = () => {
       setState(prev => ({ 
         ...prev, 
         step: 'input', 
-        error: "Analysis failed. Please try a different product or verify your API key." 
+        error: err.message || "Smart analysis failed. Try simplifying your inputs." 
       }));
     }
   };
@@ -124,8 +112,6 @@ const App: React.FC = () => {
   };
 
   const handleGenerateImage = async (index: number) => {
-    if (!state.hasApiKey) await handleOpenKey();
-
     const image = state.images[index];
     if (!image || !state.analysis) return;
 
@@ -143,7 +129,7 @@ const App: React.FC = () => {
         images: prev.images.map((img, i) => i === index ? { 
           ...img, 
           generatedImageUrl: url, 
-          versions: [...img.versions, url],
+          versions: [...(img.versions || []), url],
           isLoading: false 
         } : img)
       }));
@@ -152,7 +138,7 @@ const App: React.FC = () => {
       setState(prev => ({
         ...prev,
         images: prev.images.map((img, i) => i === index ? { ...img, isLoading: false } : img),
-        error: "Generation failed."
+        error: "Image generation failed."
       }));
     }
   };
@@ -173,7 +159,7 @@ const App: React.FC = () => {
         images: prev.images.map((img, i) => i === index ? { 
           ...img, 
           generatedImageUrl: url, 
-          versions: [...img.versions, url],
+          versions: [...(img.versions || []), url],
           isLoading: false 
         } : img)
       }));
@@ -214,12 +200,12 @@ const App: React.FC = () => {
           <div className="py-32 flex flex-col items-center">
             <div className="w-16 h-16 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-8"></div>
             <h2 className="text-3xl font-black">AI is Researching...</h2>
-            <p className="text-gray-500">Extracting specs and researching competitors...</p>
+            <p className="text-gray-500">Scanning web data and analyzing product features...</p>
           </div>
         )}
         
         {state.step === 'results' && state.analysis && (
-          <div className="space-y-12">
+          <div className="space-y-12 animate-in fade-in duration-500">
             <AnalysisView analysis={state.analysis} />
             <CreativeDisplay 
               images={state.images} 

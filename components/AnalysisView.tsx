@@ -7,20 +7,23 @@ interface AnalysisViewProps {
 }
 
 const AnalysisView: React.FC<AnalysisViewProps> = ({ analysis }) => {
+  const colorPalette = Array.isArray(analysis.colorPalette) ? analysis.colorPalette : [];
+  const keyBenefits = Array.isArray(analysis.keyBenefits) ? analysis.keyBenefits : [];
+
   return (
-    <div className="bg-white rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100 overflow-hidden animate-in fade-in duration-700">
+    <div className="bg-white rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100 overflow-hidden">
       <div className="px-10 py-8 border-b border-gray-50 flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
           <h2 className="text-3xl font-black text-gray-900 tracking-tight">Strategy Report</h2>
-          <p className="text-gray-500 mt-1 font-medium">Data-driven analysis for {analysis.category}</p>
+          <p className="text-gray-500 mt-1 font-medium">Data-driven analysis for {analysis.category || 'Product'}</p>
         </div>
         <div className="flex items-center space-x-6">
           <div className="text-right">
             <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Brand Aesthetic</h4>
-            <p className="text-sm font-bold text-gray-900">{analysis.suggestedAesthetics}</p>
+            <p className="text-sm font-bold text-gray-900">{analysis.suggestedAesthetics || 'Professional'}</p>
           </div>
           <div className="flex -space-x-2">
-            {analysis.colorPalette.slice(0, 4).map((color, i) => (
+            {colorPalette.slice(0, 4).map((color, i) => (
               <div key={i} className="w-10 h-10 rounded-full border-4 border-white shadow-sm" style={{ backgroundColor: color }} />
             ))}
           </div>
@@ -32,7 +35,7 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ analysis }) => {
           <section>
             <h4 className="text-[10px] font-black text-blue-600 uppercase tracking-[0.2em] mb-3">Key Benefits</h4>
             <div className="space-y-2">
-              {analysis.keyBenefits.map((benefit, i) => (
+              {keyBenefits.map((benefit, i) => (
                 <div key={i} className="flex items-center text-sm font-semibold text-gray-700 bg-blue-50/50 p-3 rounded-xl border border-blue-100/50">
                   <svg className="w-4 h-4 mr-3 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
@@ -73,11 +76,11 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ analysis }) => {
             <div className="space-y-4">
               <div>
                 <p className="text-xs font-bold text-gray-400 mb-1">Target Customer</p>
-                <p className="text-sm font-bold text-gray-900">{analysis.targetCustomer}</p>
+                <p className="text-sm font-bold text-gray-900">{analysis.targetCustomer || 'Retail Consumer'}</p>
               </div>
               <div>
                 <p className="text-xs font-bold text-gray-400 mb-1">Tone & Voice</p>
-                <p className="text-sm font-bold text-gray-900">{analysis.brandTone}</p>
+                <p className="text-sm font-bold text-gray-900">{analysis.brandTone || 'Professional'}</p>
               </div>
             </div>
           </section>
@@ -85,7 +88,7 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ analysis }) => {
           <section className="bg-gray-50/50 p-6 rounded-2xl border border-gray-100">
             <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-4">Competitor Insights</h4>
             <p className="text-sm text-gray-600 leading-relaxed">
-              {analysis.competitorInsights}
+              {analysis.competitorInsights || 'Visual-first presentation recommended.'}
             </p>
           </section>
           
@@ -99,7 +102,7 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ analysis }) => {
               <p className="text-xs font-black uppercase tracking-widest text-gray-400">Psychological Trigger Used</p>
             </div>
             <p className="text-sm font-medium leading-relaxed opacity-90">
-              We've identified that your category relies heavily on <span className="text-blue-400 font-bold">visual proof of quality</span>. Your generated images will emphasize high-contrast closeups and material textures based on real-time competitor visual trends.
+              Analysis suggests {analysis.category} relies on <span className="text-blue-400 font-bold">visual proof of quality</span>. Images will emphasize textures and premium finishes.
             </p>
           </div>
         </div>

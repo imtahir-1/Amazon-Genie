@@ -40,7 +40,7 @@ export interface ListingImage {
   visualPrompt: string;
   creativeBrief: string;
   generatedImageUrl?: string;
-  versions: string[]; // Stores history of all generated URLs for this brief
+  versions: string[]; 
   isLoading?: boolean;
 }
 
@@ -48,7 +48,7 @@ export interface HistoryItem {
   id: string;
   timestamp: number;
   input: string;
-  type: 'url' | 'asin' | 'image';
+  type: 'url' | 'asin' | 'image' | 'smart';
   analysis: ProductAnalysis;
   referenceImage?: string;
   images: ListingImage[];
@@ -56,7 +56,7 @@ export interface HistoryItem {
 
 export interface AppState {
   step: 'input' | 'analyzing' | 'results';
-  activeHistoryId?: string; // Tracks which history item is currently being viewed/edited
+  activeHistoryId?: string;
   analysis?: ProductAnalysis;
   images: ListingImage[];
   error?: string;
@@ -64,7 +64,7 @@ export interface AppState {
   history: HistoryItem[];
   hasApiKey: boolean;
   inputSource?: {
-    type: 'url' | 'asin' | 'image';
+    type: 'url' | 'asin' | 'image' | 'smart';
     value: string;
   };
 }

@@ -17,7 +17,11 @@ const BriefCard: React.FC<BriefCardProps> = ({ image, onGenerate, onEdit, onView
   const [isEditingBrief, setIsEditingBrief] = useState(false);
   const [showVersions, setShowVersions] = useState(false);
 
+  const versions = Array.isArray(image.versions) ? image.versions : [];
+  const currentVersionIndex = image.generatedImageUrl ? versions.indexOf(image.generatedImageUrl) : -1;
+
   const getTypeStyles = (type: string) => {
+    if (!type) return 'bg-gray-500 text-white';
     if (type.includes('Main')) return 'bg-orange-500 text-white';
     if (type.includes('Lifestyle')) return 'bg-purple-600 text-white';
     if (type.includes('Infographic')) return 'bg-blue-600 text-white';
@@ -43,7 +47,6 @@ const BriefCard: React.FC<BriefCardProps> = ({ image, onGenerate, onEdit, onView
 
   return (
     <div className="bg-white rounded-3xl border border-gray-100 shadow-sm hover:shadow-xl transition-all duration-500 flex flex-col h-full overflow-hidden group">
-      {/* Visual Workspace */}
       <div className="aspect-square bg-[#F8F9FC] relative overflow-hidden flex items-center justify-center">
         {image.generatedImageUrl ? (
           <>
@@ -60,18 +63,17 @@ const BriefCard: React.FC<BriefCardProps> = ({ image, onGenerate, onEdit, onView
                 </div>
                 <div className="flex gap-2">
                   <button onClick={onGenerate} className="bg-white/20 backdrop-blur-md text-white px-4 py-2 rounded-xl font-bold text-xs border border-white/20">Regenerate</button>
-                  {image.versions.length > 1 && (
+                  {versions.length > 1 && (
                     <button onClick={() => setShowVersions(!showVersions)} className="bg-white/20 backdrop-blur-md text-white px-4 py-2 rounded-xl font-bold text-xs border border-white/20">
-                      v{image.versions.indexOf(image.generatedImageUrl!) + 1} of {image.versions.length}
+                      v{currentVersionIndex + 1} of {versions.length}
                     </button>
                   )}
                 </div>
               </div>
             )}
 
-            {/* Version Switcher Overlay */}
             {showVersions && !image.isLoading && (
-              <div className="absolute inset-0 bg-white/95 backdrop-blur-xl z-30 p-4 animate-in slide-in-from-bottom-2">
+              <div className="absolute inset-0 bg-white/95 backdrop-blur-xl z-30 p-4">
                 <div className="flex items-center justify-between mb-4">
                   <h4 className="text-xs font-black uppercase tracking-widest text-gray-400">Generation History</h4>
                   <button onClick={() => setShowVersions(false)} className="text-gray-400 hover:text-gray-900">
@@ -79,7 +81,7 @@ const BriefCard: React.FC<BriefCardProps> = ({ image, onGenerate, onEdit, onView
                   </button>
                 </div>
                 <div className="grid grid-cols-3 gap-3 overflow-y-auto max-h-[80%] p-1">
-                  {image.versions.map((url, i) => (
+                  {versions.map((url, i) => (
                     <button 
                       key={i} 
                       onClick={() => { onSwitchVersion(url); setShowVersions(false); }}
@@ -107,19 +109,14 @@ const BriefCard: React.FC<BriefCardProps> = ({ image, onGenerate, onEdit, onView
                   />
                   <div className="flex flex-wrap gap-2 justify-center py-2">
                     {quickRefines.map(tag => (
-                      <button 
-                        key={tag}
-                        type="button"
-                        onClick={() => setEditPrompt(tag)}
-                        className="px-2 py-1 bg-white/10 hover:bg-white/20 rounded-md text-[9px] text-white/70 border border-white/5 transition-colors"
-                      >
+                      <button key={tag} type="button" onClick={() => setEditPrompt(tag)} className="px-2 py-1 bg-white/10 hover:bg-white/20 rounded-md text-[9px] text-white/70 border border-white/5 transition-colors">
                         {tag}
                       </button>
                     ))}
                   </div>
                   <div className="flex gap-2">
-                    <button type="submit" className="flex-1 bg-blue-600 text-white py-2 rounded-xl text-xs font-bold hover:bg-blue-700 transition-colors">Apply Magic</button>
-                    <button type="button" onClick={() => setShowEditInput(false)} className="px-4 bg-white/10 text-white py-2 rounded-xl text-xs font-bold hover:bg-white/20 transition-colors">Cancel</button>
+                    <button type="submit" className="flex-1 bg-blue-600 text-white py-2 rounded-xl text-xs font-bold">Apply</button>
+                    <button type="button" onClick={() => setShowEditInput(false)} className="px-4 bg-white/10 text-white py-2 rounded-xl text-xs font-bold">Cancel</button>
                   </div>
                 </form>
               </div>
@@ -137,7 +134,7 @@ const BriefCard: React.FC<BriefCardProps> = ({ image, onGenerate, onEdit, onView
                 <div className="w-16 h-16 bg-blue-50 rounded-full mx-auto flex items-center justify-center text-blue-400">
                    <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
                 </div>
-                <button onClick={onGenerate} className="bg-gray-900 text-white px-8 py-3 rounded-2xl text-sm font-black shadow-xl hover:bg-black transition-all active:scale-95 uppercase tracking-widest">
+                <button onClick={onGenerate} className="bg-gray-900 text-white px-8 py-3 rounded-2xl text-sm font-black shadow-xl hover:bg-black transition-all uppercase tracking-widest">
                   Generate Image
                 </button>
               </div>
@@ -146,18 +143,18 @@ const BriefCard: React.FC<BriefCardProps> = ({ image, onGenerate, onEdit, onView
         )}
 
         <div className={`absolute top-4 left-4 px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest shadow-lg z-10 ${getTypeStyles(image.type)}`}>
-          {image.type}
+          {image.type || 'Asset'}
         </div>
       </div>
 
       <div className="p-8 flex-1 flex flex-col relative">
         <div className="flex items-center justify-between mb-6">
-          <h3 className="font-black text-gray-900 text-lg leading-tight">{image.title}</h3>
+          <h3 className="font-black text-gray-900 text-lg leading-tight">{image.title || 'Brief'}</h3>
           <button 
             onClick={() => setIsEditingBrief(!isEditingBrief)}
             className={`text-[10px] font-black uppercase tracking-widest px-4 py-1.5 rounded-full transition-all ${isEditingBrief ? 'bg-green-600 text-white' : 'bg-blue-50 text-blue-600 hover:bg-blue-100'}`}
           >
-            {isEditingBrief ? 'Save Strategy' : 'Edit Strategy'}
+            {isEditingBrief ? 'Save' : 'Edit'}
           </button>
         </div>
 
@@ -166,74 +163,35 @@ const BriefCard: React.FC<BriefCardProps> = ({ image, onGenerate, onEdit, onView
             <h4 className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1.5">Headline & Selling Hook</h4>
             {isEditingBrief ? (
               <div className="space-y-2">
-                <input 
-                  value={image.headline}
-                  onChange={(e) => onUpdateField('headline', e.target.value)}
-                  className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm font-bold text-gray-900 outline-none focus:ring-2 focus:ring-blue-500/20"
-                  placeholder="Headline Overlay"
-                />
-                <textarea 
-                  value={image.subCopy}
-                  onChange={(e) => onUpdateField('subCopy', e.target.value)}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs text-gray-600 outline-none focus:ring-2 focus:ring-blue-500/20"
-                  rows={2}
-                  placeholder="Body Copy / Benefits"
-                />
+                <input value={image.headline || ''} onChange={(e) => onUpdateField('headline', e.target.value)} className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm font-bold text-gray-900 outline-none" placeholder="Headline" />
+                <textarea value={image.subCopy || ''} onChange={(e) => onUpdateField('subCopy', e.target.value)} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs text-gray-600 outline-none" rows={2} placeholder="Benefits" />
               </div>
             ) : (
               <div className="bg-gray-50/50 p-4 rounded-xl border border-gray-100">
-                <p className="text-gray-900 font-bold leading-snug mb-1">{image.headline}</p>
-                <p className="text-xs text-gray-500 font-medium leading-relaxed">{image.subCopy}</p>
+                <p className="text-gray-900 font-bold leading-snug mb-1">{image.headline || 'No Headline'}</p>
+                <p className="text-xs text-gray-500 font-medium leading-relaxed">{image.subCopy || 'No strategy defined'}</p>
               </div>
             )}
           </div>
-
           <div>
-            <h4 className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1.5">Strategy Logic (CTR Focus)</h4>
-            {isEditingBrief ? (
-              <textarea 
-                value={image.creativeBrief}
-                onChange={(e) => onUpdateField('creativeBrief', e.target.value)}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs text-gray-500 outline-none focus:ring-2 focus:ring-blue-500/20"
-                rows={3}
-              />
-            ) : (
-              <p className="text-xs text-gray-500 font-medium italic border-l-2 border-blue-200 pl-3">{image.creativeBrief}</p>
-            )}
-          </div>
-
-          <div>
-            <h4 className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1.5">Visual Prompt (AI Idea)</h4>
-            {isEditingBrief ? (
-              <textarea 
-                value={image.visualPrompt}
-                onChange={(e) => onUpdateField('visualPrompt', e.target.value)}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs text-blue-600/70 font-mono outline-none focus:ring-2 focus:ring-blue-500/20"
-                rows={4}
-              />
-            ) : (
-              <p className="text-[11px] text-gray-400 italic leading-relaxed line-clamp-3 bg-gray-50/30 p-2 rounded-lg">{image.visualPrompt}</p>
-            )}
+            <h4 className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1.5">Strategy</h4>
+            <p className="text-xs text-gray-500 font-medium italic border-l-2 border-blue-200 pl-3">{image.creativeBrief || 'Standard commerce optimization'}</p>
           </div>
         </div>
 
         <div className="mt-auto pt-6 border-t border-gray-50 flex items-center justify-between">
           <div className="flex flex-col">
             <span className="text-[10px] font-black text-gray-300 uppercase tracking-widest">
-              {image.generatedImageUrl ? 'Asset Generated' : 'Pending Generation'}
+              {image.generatedImageUrl ? 'Ready' : 'Pending'}
             </span>
-            {image.versions.length > 1 && (
-              <span className="text-[9px] font-bold text-blue-400">
-                {image.versions.length} versions stored
-              </span>
-            )}
+            {versions.length > 1 && <span className="text-[9px] font-bold text-blue-400">{versions.length} versions</span>}
           </div>
           {image.generatedImageUrl && (
             <div className="flex gap-2">
               <button onClick={onView} className="text-blue-600 p-2 hover:bg-blue-50 rounded-lg transition-colors">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
               </button>
-              <a href={image.generatedImageUrl} download={`listing-${image.id}.png`} className="text-blue-600 p-2 hover:bg-blue-50 rounded-lg transition-colors">
+              <a href={image.generatedImageUrl} download={`asset.png`} className="text-blue-600 p-2 hover:bg-blue-50 rounded-lg transition-colors">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
               </a>
             </div>
