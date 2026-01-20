@@ -7,44 +7,108 @@ export class GeminiService {
     return new GoogleGenAI({ apiKey: process.env.API_KEY });
   }
 
+  /**
+   * Resilient JSON extraction that handles markdown blocks, 
+   * grounding noise, and unexpected text wraps.
+   */
   private static extractJson(text: string): any {
+    if (!text) return null;
+    
+    // Attempt 1: Standard trim and clean
+    let cleaned = text.trim();
+    cleaned = cleaned.replace(/^```json\s*/i, "").replace(/```\s*$/, "");
+    
     try {
-      return JSON.parse(text);
+      return JSON.parse(cleaned);
     } catch (e) {
-      const match = text.match(/\{[\s\S]*\}|\[[\s\S]*\]/);
-      if (match) {
+      // Attempt 2: Boundary searching (finding the largest valid JSON block)
+      const firstBrace = cleaned.indexOf('{');
+      const lastBrace = cleaned.lastIndexOf('}');
+      const firstBracket = cleaned.indexOf('[');
+      const lastBracket = cleaned.lastIndexOf(']');
+
+      let start = -1;
+      let end = -1;
+
+      if (firstBrace !== -1 && (firstBracket === -1 || firstBrace < firstBracket)) {
+        start = firstBrace;
+        end = lastBrace;
+      } else if (firstBracket !== -1) {
+        start = firstBracket;
+        end = lastBracket;
+      }
+
+      if (start !== -1 && end !== -1 && end > start) {
         try {
-          return JSON.parse(match[0]);
-        } catch (e2) {
-          console.error("JSON block extraction failed", text);
-          throw new Error("Failed to parse AI response.");
+          const block = cleaned.substring(start, end + 1);
+          return JSON.parse(block);
+        } catch (innerError) {
+          console.error("Critical JSON parse failure:", innerError);
         }
       }
-      throw new Error("The AI response was not in a valid format.");
+      
+      throw new Error("The AI response was not in a valid format. Please try again.");
     }
   }
 
+  /**
+   * Two-Phase Analysis: 
+   * 1. Research raw data with Google Search.
+   * 2. Structure that data into the ProductAnalysis schema.
+   */
   static async analyzeProduct(input: { text?: string, image?: string }): Promise<ProductAnalysis> {
     const ai = this.getAI();
-    const model = 'gemini-3-flash-preview';
+    const modelName = 'gemini-3-flash-preview';
+    
+    let researchContext = "";
+    let groundingSources: GroundingSource[] = [];
 
-    const basePromptInstructions = `
-      You are a world-class Amazon Listing Strategist. Your goal is to combine technical data with visual aesthetics.
+    // PHASE 1: Research (Only if text input provided)
+    if (input.text) {
+      const researchResponse = await ai.models.generateContent({
+        model: modelName,
+        contents: `Research this Amazon product or category: "${input.text}". 
+                  Find technical specs, competitor weaknesses, and typical customer complaints. 
+                  Provide a detailed summary.`,
+        config: { tools: [{ googleSearch: {} }] }
+      });
+      researchContext = researchResponse.text || "";
       
-      TASK:
-      ${input.text ? `1. Use Google Search to research this product link/ASIN: "${input.text}". Find technical specs, materials, and target audience.` : ''}
-      ${input.image ? `2. Analyze the provided image to identify the physical design, branding, and color palette.` : ''}
-      3. Cross-reference all data to create a high-conversion intelligence report.
+      if (researchResponse.candidates?.[0]?.groundingMetadata?.groundingChunks) {
+        groundingSources = researchResponse.candidates[0].groundingMetadata.groundingChunks
+          .filter((c: any) => c?.web)
+          .map((c: any) => ({ 
+            title: c.web.title || 'Source', 
+            uri: c.web.uri 
+          }));
+      }
+    }
 
-      Return STRICTLY as a JSON object with:
-      category (string), useCase (string), targetCustomer (string), keyBenefits (string array), 
-      materials (string), dimensions (string), colorPalette (string array of hex codes), 
-      brandTone (string), competitorInsights (string), suggestedAesthetics (string), 
-      visualDescription (precise 3-sentence description), extractedImageUrls (string array).
+    // PHASE 2: Structuring
+    const prompt = `
+      You are an Amazon Listing Strategist. Convert the following research and product image into a structured analysis.
+      
+      RESEARCH DATA: ${researchContext || "No web data provided."}
+      ${input.image ? "IMAGE ATTACHED: Use the visual details of the product image for the 'visualDescription'." : ""}
+      
+      Return a JSON object exactly matching this schema:
+      {
+        "category": "String",
+        "useCase": "String",
+        "targetCustomer": "String",
+        "keyBenefits": ["String", "String", "String", "String", "String"],
+        "materials": "String",
+        "dimensions": "String",
+        "colorPalette": ["#HexCode", "#HexCode"],
+        "brandTone": "String",
+        "competitorInsights": "String",
+        "suggestedAesthetics": "String",
+        "visualDescription": "Detailed 3-sentence description of the physical product.",
+        "extractedImageUrls": []
+      }
     `;
 
-    const parts: any[] = [{ text: basePromptInstructions }];
-    
+    const parts: any[] = [{ text: prompt }];
     if (input.image) {
       parts.push({
         inlineData: {
@@ -54,64 +118,92 @@ export class GeminiService {
       });
     }
 
-    const response = await ai.models.generateContent({
-      model: model,
+    const structureResponse = await ai.models.generateContent({
+      model: modelName,
       contents: { parts },
       config: {
-        tools: input.text ? [{ googleSearch: {} }] : undefined,
         responseMimeType: "application/json",
-      },
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            category: { type: Type.STRING },
+            useCase: { type: Type.STRING },
+            targetCustomer: { type: Type.STRING },
+            keyBenefits: { type: Type.ARRAY, items: { type: Type.STRING } },
+            materials: { type: Type.STRING },
+            dimensions: { type: Type.STRING },
+            colorPalette: { type: Type.ARRAY, items: { type: Type.STRING } },
+            brandTone: { type: Type.STRING },
+            competitorInsights: { type: Type.STRING },
+            suggestedAesthetics: { type: Type.STRING },
+            visualDescription: { type: Type.STRING },
+            extractedImageUrls: { type: Type.ARRAY, items: { type: Type.STRING } },
+          },
+          required: ["category", "useCase", "targetCustomer", "keyBenefits", "brandTone", "visualDescription"],
+        }
+      }
     });
 
-    const analysis: ProductAnalysis = this.extractJson(response.text || "{}");
-    
-    if (response.candidates?.[0]?.groundingMetadata?.groundingChunks) {
-      analysis.groundingSources = response.candidates[0].groundingMetadata.groundingChunks
-        .filter((c: any) => c?.web)
-        .map((c: any) => ({ 
-          title: c.web.title || 'Source', 
-          uri: c.web.uri 
-        }));
-    }
-    
-    analysis.keyBenefits = analysis.keyBenefits || [];
-    analysis.colorPalette = analysis.colorPalette || [];
-    analysis.extractedImageUrls = analysis.extractedImageUrls || [];
+    const analysis = this.extractJson(structureResponse.text || "{}") as ProductAnalysis;
+    analysis.groundingSources = groundingSources;
     
     return analysis;
   }
 
   static async generateListingBriefs(analysis: ProductAnalysis): Promise<ListingImage[]> {
     const ai = this.getAI();
-    const prompt = `Convert this intelligence into an 8-image Amazon stack.
-    Product: ${analysis.category}. DNA: ${analysis.visualDescription}.
+    const prompt = `Based on this product analysis, design an 8-image Amazon visual strategy.
     
-    Assets needed: 1 Main, 2 Lifestyle, 3 Infographic, 1 Comparison, 1 Brand Story.
-    Return JSON array: {id, type, title, headline, subCopy, visualPrompt, creativeBrief}.`;
+    Category: ${analysis.category}
+    Brand DNA: ${analysis.visualDescription}
+    Tone: ${analysis.brandTone}
+    
+    Produce 8 assets: 1 Main, 2 Lifestyle, 3 Infographics, 1 Comparison, 1 Brand Story.
+    Return a JSON array of objects: {id, type, title, headline, subCopy, visualPrompt, creativeBrief}.`;
 
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: prompt,
-      config: { responseMimeType: "application/json" },
+      config: { 
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              id: { type: Type.STRING },
+              type: { type: Type.STRING },
+              title: { type: Type.STRING },
+              headline: { type: Type.STRING },
+              subCopy: { type: Type.STRING },
+              visualPrompt: { type: Type.STRING },
+              creativeBrief: { type: Type.STRING },
+            },
+            required: ["id", "type", "title", "headline", "subCopy", "visualPrompt", "creativeBrief"]
+          }
+        }
+      },
     });
 
-    return this.extractJson(response.text || "[]");
+    const result = this.extractJson(response.text || "[]");
+    return Array.isArray(result) ? result : [];
   }
 
   static async generateImage(imageObj: ListingImage, referenceBase64?: string, visualDescription?: string): Promise<string> {
     const ai = this.getAI();
     const model = 'gemini-2.5-flash-image';
     const fullPrompt = `
-      PROFESSIONAL AMZ E-COMMERCE PHOTOGRAPHY. Commercial Studio Lighting. 
-      PRODUCT DNA: ${visualDescription || 'Professional product shot'}.
-      COMPOSITION: ${imageObj.visualPrompt}.
-      HEADLINE TEXT AREA: Leave negative space for "${imageObj.headline}".
+      COMMERCIAL STUDIO PHOTOGRAPHY. 
+      PRODUCT: ${visualDescription || 'Professional retail product'}.
+      SCENE: ${imageObj.visualPrompt}.
+      BRIEF: ${imageObj.creativeBrief}.
+      COMPOSITION: Centered, 8k resolution, leave space for text overlay "${imageObj.headline}".
     `;
 
     const contents = referenceBase64 ? {
       parts: [
         { inlineData: { data: referenceBase64.split(',')[1], mimeType: 'image/png' } },
-        { text: `${fullPrompt} PRESERVE THE EXACT PRODUCT DETAILS FROM THE ATTACHED IMAGE.` }
+        { text: `${fullPrompt} THE PRODUCT IN THE GENERATED IMAGE MUST BE IDENTICAL IN SHAPE, COLOR, AND LOGO TO THIS REFERENCE IMAGE.` }
       ]
     } : { parts: [{ text: fullPrompt }] };
 
@@ -126,7 +218,7 @@ export class GeminiService {
         if (part.inlineData) return `data:image/png;base64,${part.inlineData.data}`;
       }
     }
-    throw new Error("Image generation failed.");
+    throw new Error("Image generation engine failed to return a visual.");
   }
 
   static async editImage(base64Data: string, editPrompt: string): Promise<string> {
@@ -136,7 +228,7 @@ export class GeminiService {
       contents: {
         parts: [
           { inlineData: { data: base64Data.split(',')[1], mimeType: 'image/png' } },
-          { text: `Photo Edit: "${editPrompt}". Keep the product consistent.` }
+          { text: `Smart Edit: ${editPrompt}. Maintain the integrity of the product while changing the environment or style.` }
         ]
       }
     });

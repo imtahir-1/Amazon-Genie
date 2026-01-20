@@ -12,6 +12,7 @@ interface ProductInputProps {
 const ProductInput: React.FC<ProductInputProps> = ({ onSubmit, onSelectHistory, error, history }) => {
   const [textInput, setTextInput] = useState('');
   const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -30,13 +31,34 @@ const ProductInput: React.FC<ProductInputProps> = ({ onSubmit, onSelectHistory, 
     });
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
+  const processFile = (file: File) => {
+    if (file && file.type.startsWith('image/')) {
       const reader = new FileReader();
       reader.onloadend = () => setImagePreview(reader.result as string);
       reader.readAsDataURL(file);
     }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) processFile(file);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) processFile(file);
   };
 
   return (
@@ -69,7 +91,11 @@ const ProductInput: React.FC<ProductInputProps> = ({ onSubmit, onSelectHistory, 
                 
                 <div 
                   onClick={() => fileInputRef.current?.click()}
+                  onDragOver={handleDragOver}
+                  onDragLeave={handleDragLeave}
+                  onDrop={handleDrop}
                   className={`border-2 border-dashed rounded-3xl transition-all cursor-pointer group relative overflow-hidden flex flex-col items-center justify-center min-h-[280px] ${
+                    isDragging ? 'border-blue-500 bg-blue-50/50 scale-[0.98]' : 
                     imagePreview ? 'border-blue-200 bg-white' : 'border-gray-200 hover:border-blue-400 hover:bg-white'
                   }`}
                 >
@@ -77,10 +103,12 @@ const ProductInput: React.FC<ProductInputProps> = ({ onSubmit, onSelectHistory, 
                     <img src={imagePreview} className="w-full h-full object-contain p-4" />
                   ) : (
                     <>
-                      <div className="w-14 h-14 bg-white rounded-2xl shadow-sm flex items-center justify-center text-blue-600 mb-4 group-hover:scale-110 transition-transform">
+                      <div className={`w-14 h-14 rounded-2xl shadow-sm flex items-center justify-center mb-4 transition-all ${isDragging ? 'bg-blue-600 text-white scale-110' : 'bg-white text-blue-600 group-hover:scale-110'}`}>
                         <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
                       </div>
-                      <p className="text-gray-900 font-bold">Drag & Drop Photo</p>
+                      <p className={`text-gray-900 font-bold ${isDragging ? 'text-blue-600' : ''}`}>
+                        {isDragging ? 'Drop Image Now' : 'Drag & Drop Photo'}
+                      </p>
                       <p className="text-xs text-gray-400 mt-1 font-medium">PNG, JPG up to 10MB</p>
                     </>
                   )}
