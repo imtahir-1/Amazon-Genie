@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { GeminiService } from './services/geminiService';
 import { AppState, ListingImage, HistoryItem, User } from './types';
 import Header from './components/Header';
@@ -11,47 +11,40 @@ import ImageModal from './components/ImageModal';
 
 const App: React.FC = () => {
   const [state, setState] = useState<AppState>(() => {
-    // Attempt to recover session
-    const savedUser = localStorage.getItem('listing_genius_session');
-    const user = savedUser ? JSON.parse(savedUser) : undefined;
-    
-    // Attempt to recover history for ALL users (we filter by current user later)
-    const savedHistory = localStorage.getItem('listing_genius_history_v3');
-    const allHistory = savedHistory ? JSON.parse(savedHistory) : [];
-    
-    return {
-      step: user ? 'input' : 'login',
-      user: user,
-      images: [],
-      history: allHistory,
-      hasApiKey: true,
-    };
+    try {
+      const savedUser = localStorage.getItem('listing_genius_session');
+      const user = savedUser ? JSON.parse(savedUser) : undefined;
+      const savedHistory = localStorage.getItem('listing_genius_history_v3');
+      const allHistory = savedHistory ? JSON.parse(savedHistory) : [];
+      
+      return {
+        step: user ? 'input' : 'login',
+        user: user,
+        images: [],
+        history: allHistory,
+        hasApiKey: true,
+      };
+    } catch (e) {
+      return { step: 'login', images: [], history: [], hasApiKey: true };
+    }
   });
   
   const [loadingMilestone, setLoadingMilestone] = useState<string>('');
   const [viewingImage, setViewingImage] = useState<{ url: string, title: string } | null>(null);
 
-  // Sync Global History
+  // Optimized persistence: only save history when it actually changes from an action
+  // and handle potential localStorage quota errors gracefully
   useEffect(() => {
-    localStorage.setItem('listing_genius_history_v3', JSON.stringify(state.history));
-  }, [state.history]);
-
-  // Sync Current Projects if active
-  useEffect(() => {
-    if (state.activeHistoryId && state.step === 'results' && state.user) {
-      const idx = state.history.findIndex(h => h.id === state.activeHistoryId);
-      if (idx !== -1) {
-        const current = state.history[idx];
-        if (JSON.stringify(current.images) !== JSON.stringify(state.images)) {
-          setState(prev => {
-            const newHist = [...prev.history];
-            newHist[idx] = { ...newHist[idx], images: prev.images };
-            return { ...prev, history: newHist };
-          });
-        }
+    if (state.history.length > 0) {
+      try {
+        localStorage.setItem('listing_genius_history_v3', JSON.stringify(state.history));
+      } catch (e) {
+        console.warn("Storage quota exceeded. Clearing oldest history item.");
+        const trimmedHistory = state.history.slice(0, -1);
+        localStorage.setItem('listing_genius_history_v3', JSON.stringify(trimmedHistory));
       }
     }
-  }, [state.images, state.activeHistoryId, state.step, state.user, state.history]);
+  }, [state.history]);
 
   const handleLogin = (user: User) => {
     localStorage.setItem('listing_genius_session', JSON.stringify(user));
@@ -60,7 +53,18 @@ const App: React.FC = () => {
 
   const handleLogout = () => {
     localStorage.removeItem('listing_genius_session');
-    setState(prev => ({ ...prev, user: undefined, step: 'login', activeHistoryId: undefined, images: [] }));
+    setState(prev => ({ ...prev, user: undefined, step: 'login', activeHistoryId: undefined, images: [], analysis: undefined }));
+  };
+
+  // Helper to update both local state and the history array in one go
+  const syncUpdate = (updateFn: (prevImages: ListingImage[]) => ListingImage[]) => {
+    setState(prev => {
+      const newImages = updateFn(prev.images);
+      const newHistory = prev.history.map(h => 
+        h.id === prev.activeHistoryId ? { ...h, images: newImages } : h
+      );
+      return { ...prev, images: newImages, history: newHistory };
+    });
   };
 
   const handleStartAnalysis = async (data: { text: string, image: string, type: 'url' | 'asin' | 'image' | 'smart' }) => {
@@ -103,7 +107,7 @@ const App: React.FC = () => {
         analysis,
         images: newHistoryItem.images,
         referenceImage: finalReference,
-        history: [newHistoryItem, ...prev.history]
+        history: [newHistoryItem, ...prev.history].slice(0, 20) // Limit to 20 for stability
       }));
     } catch (err: any) {
       console.error(err);
@@ -126,16 +130,14 @@ const App: React.FC = () => {
   };
 
   const updateImageField = (id: string, field: keyof ListingImage, value: string) => {
-    setState(prev => ({
-      ...prev,
-      images: prev.images.map(img => img.id === id ? { ...img, [field]: value } : img)
-    }));
+    syncUpdate(images => images.map(img => img.id === id ? { ...img, [field]: value } : img));
   };
 
   const handleGenerateImage = async (index: number) => {
     const image = state.images[index];
     if (!image || !state.analysis) return;
 
+    // Set loading state
     setState(prev => ({
       ...prev,
       images: prev.images.map((img, i) => i === index ? { ...img, isLoading: true } : img)
@@ -145,15 +147,14 @@ const App: React.FC = () => {
       const ref = state.referenceImage?.startsWith('data:') ? state.referenceImage : undefined;
       const url = await GeminiService.generateImage(image, ref, state.analysis.visualDescription);
       
-      setState(prev => ({
-        ...prev,
-        images: prev.images.map((img, i) => i === index ? { 
-          ...img, 
-          generatedImageUrl: url, 
-          versions: [...(img.versions || []), url],
-          isLoading: false 
-        } : img)
-      }));
+      // Update both active images and history storage
+      syncUpdate(images => images.map((img, i) => i === index ? { 
+        ...img, 
+        generatedImageUrl: url, 
+        versions: [...(img.versions || []), url],
+        isLoading: false 
+      } : img));
+      
     } catch (err: any) {
       console.error(err);
       setState(prev => ({
@@ -175,15 +176,12 @@ const App: React.FC = () => {
 
     try {
       const url = await GeminiService.editImage(image.generatedImageUrl, editPrompt);
-      setState(prev => ({
-        ...prev,
-        images: prev.images.map((img, i) => i === index ? { 
-          ...img, 
-          generatedImageUrl: url, 
-          versions: [...(img.versions || []), url],
-          isLoading: false 
-        } : img)
-      }));
+      syncUpdate(images => images.map((img, i) => i === index ? { 
+        ...img, 
+        generatedImageUrl: url, 
+        versions: [...(img.versions || []), url],
+        isLoading: false 
+      } : img));
     } catch (err) {
       console.error(err);
       setState(prev => ({
@@ -194,24 +192,25 @@ const App: React.FC = () => {
   };
 
   const handleSwitchVersion = (index: number, versionUrl: string) => {
-    setState(prev => ({
-      ...prev,
-      images: prev.images.map((img, i) => i === index ? { ...img, generatedImageUrl: versionUrl } : img)
-    }));
+    syncUpdate(images => images.map((img, i) => i === index ? { ...img, generatedImageUrl: versionUrl } : img));
   };
 
   const handleUpdateReference = (newRef: string) => {
-    setState(prev => ({ ...prev, referenceImage: newRef }));
+    setState(prev => {
+      const newHistory = prev.history.map(h => 
+        h.id === prev.activeHistoryId ? { ...h, referenceImage: newRef } : h
+      );
+      return { ...prev, referenceImage: newRef, history: newHistory };
+    });
   };
 
-  // Filter history for current user
   const userHistory = state.history.filter(h => h.userId === state.user?.id);
 
   return (
     <div className="min-h-screen bg-[#FDFDFF] pb-20 selection:bg-blue-100">
       <Header 
         user={state.user} 
-        onReset={() => setState(prev => ({ ...prev, step: 'input', activeHistoryId: undefined, images: [] }))} 
+        onReset={() => setState(prev => ({ ...prev, step: 'input', activeHistoryId: undefined, images: [], analysis: undefined }))} 
         onLogout={handleLogout}
         onExport={() => alert('Exporting all assets...')} 
       />
