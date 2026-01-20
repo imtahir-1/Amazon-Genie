@@ -1,8 +1,9 @@
 
 import React, { useState, useEffect } from 'react';
 import { GeminiService } from './services/geminiService';
-import { AppState, ListingImage, HistoryItem } from './types';
+import { AppState, ListingImage, HistoryItem, User } from './types';
 import Header from './components/Header';
+import Login from './components/Login';
 import ProductInput from './components/ProductInput';
 import AnalysisView from './components/AnalysisView';
 import CreativeDisplay from './components/CreativeDisplay';
@@ -10,11 +11,19 @@ import ImageModal from './components/ImageModal';
 
 const App: React.FC = () => {
   const [state, setState] = useState<AppState>(() => {
-    const saved = localStorage.getItem('listing_genius_history_v2');
+    // Attempt to recover session
+    const savedUser = localStorage.getItem('listing_genius_session');
+    const user = savedUser ? JSON.parse(savedUser) : undefined;
+    
+    // Attempt to recover history for ALL users (we filter by current user later)
+    const savedHistory = localStorage.getItem('listing_genius_history_v3');
+    const allHistory = savedHistory ? JSON.parse(savedHistory) : [];
+    
     return {
-      step: 'input',
+      step: user ? 'input' : 'login',
+      user: user,
       images: [],
-      history: saved ? JSON.parse(saved) : [],
+      history: allHistory,
       hasApiKey: true,
     };
   });
@@ -22,11 +31,41 @@ const App: React.FC = () => {
   const [loadingMilestone, setLoadingMilestone] = useState<string>('');
   const [viewingImage, setViewingImage] = useState<{ url: string, title: string } | null>(null);
 
+  // Sync Global History
   useEffect(() => {
-    localStorage.setItem('listing_genius_history_v2', JSON.stringify(state.history));
+    localStorage.setItem('listing_genius_history_v3', JSON.stringify(state.history));
   }, [state.history]);
 
+  // Sync Current Projects if active
+  useEffect(() => {
+    if (state.activeHistoryId && state.step === 'results' && state.user) {
+      const idx = state.history.findIndex(h => h.id === state.activeHistoryId);
+      if (idx !== -1) {
+        const current = state.history[idx];
+        if (JSON.stringify(current.images) !== JSON.stringify(state.images)) {
+          setState(prev => {
+            const newHist = [...prev.history];
+            newHist[idx] = { ...newHist[idx], images: prev.images };
+            return { ...prev, history: newHist };
+          });
+        }
+      }
+    }
+  }, [state.images, state.activeHistoryId, state.step, state.user, state.history]);
+
+  const handleLogin = (user: User) => {
+    localStorage.setItem('listing_genius_session', JSON.stringify(user));
+    setState(prev => ({ ...prev, user, step: 'input' }));
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('listing_genius_session');
+    setState(prev => ({ ...prev, user: undefined, step: 'login', activeHistoryId: undefined, images: [] }));
+  };
+
   const handleStartAnalysis = async (data: { text: string, image: string, type: 'url' | 'asin' | 'image' | 'smart' }) => {
+    if (!state.user) return;
+
     setState(prev => ({ 
       ...prev, 
       step: 'analyzing', 
@@ -36,22 +75,21 @@ const App: React.FC = () => {
     }));
     
     try {
-      setLoadingMilestone('Gathering Web Intelligence...');
+      setLoadingMilestone('Connecting to Google Search...');
       const analysis = await GeminiService.analyzeProduct({ text: data.text, image: data.image });
       
-      setLoadingMilestone('Building Visual Strategy...');
+      setLoadingMilestone('Synthesizing Visual Briefs...');
       const briefs = await GeminiService.generateListingBriefs(analysis);
       
-      if (!briefs || briefs.length === 0) {
-        throw new Error("Strategy engine failed to output briefs.");
-      }
+      if (!briefs || briefs.length === 0) throw new Error("AI could not generate briefs.");
 
       const finalReference = data.image || (analysis.extractedImageUrls && analysis.extractedImageUrls[0]) || undefined;
       
       const newHistoryItem: HistoryItem = {
         id: Date.now().toString(),
+        userId: state.user.id,
         timestamp: Date.now(),
-        input: data.text || 'Visual Input',
+        input: data.text || 'Manual Visual Input',
         type: data.type,
         analysis,
         referenceImage: finalReference,
@@ -65,15 +103,11 @@ const App: React.FC = () => {
         analysis,
         images: newHistoryItem.images,
         referenceImage: finalReference,
-        history: [newHistoryItem, ...prev.history].slice(0, 50)
+        history: [newHistoryItem, ...prev.history]
       }));
     } catch (err: any) {
-      console.error("Critical Failure:", err);
-      setState(prev => ({ 
-        ...prev, 
-        step: 'input', 
-        error: err.message || "Something went wrong. Please check your inputs and try again." 
-      }));
+      console.error(err);
+      setState(prev => ({ ...prev, step: 'input', error: err.message || "Engine Error. Please retry." }));
     } finally {
       setLoadingMilestone('');
     }
@@ -125,7 +159,7 @@ const App: React.FC = () => {
       setState(prev => ({
         ...prev,
         images: prev.images.map((img, i) => i === index ? { ...img, isLoading: false } : img),
-        error: "Asset generation timed out. Please try again."
+        error: "Image Engine Timeout. Please try again."
       }));
     }
   };
@@ -170,14 +204,25 @@ const App: React.FC = () => {
     setState(prev => ({ ...prev, referenceImage: newRef }));
   };
 
+  // Filter history for current user
+  const userHistory = state.history.filter(h => h.userId === state.user?.id);
+
   return (
     <div className="min-h-screen bg-[#FDFDFF] pb-20 selection:bg-blue-100">
-      <Header onReset={() => setState(prev => ({ ...prev, step: 'input', activeHistoryId: undefined }))} onExport={() => alert('Exporting all assets...')} />
+      <Header 
+        user={state.user} 
+        onReset={() => setState(prev => ({ ...prev, step: 'input', activeHistoryId: undefined, images: [] }))} 
+        onLogout={handleLogout}
+        onExport={() => alert('Exporting all assets...')} 
+      />
+      
       <main className="max-w-7xl mx-auto px-4 py-8">
-        {state.step === 'input' && (
+        {state.step === 'login' && <Login onLogin={handleLogin} />}
+
+        {state.step === 'input' && state.user && (
           <ProductInput 
             onSubmit={handleStartAnalysis} 
-            history={state.history} 
+            history={userHistory} 
             onSelectHistory={handleLoadFromHistory} 
             error={state.error} 
           />
@@ -191,10 +236,10 @@ const App: React.FC = () => {
                 <div className="w-12 h-12 bg-blue-50 rounded-full animate-pulse"></div>
               </div>
             </div>
-            <h2 className="text-4xl font-black text-gray-900 mb-2">Deep Intelligence Scan</h2>
-            <p className="text-blue-600 font-black uppercase tracking-widest text-xs mb-8">{loadingMilestone}</p>
+            <h2 className="text-4xl font-black text-gray-900 mb-2 tracking-tight">E-commerce Intelligence</h2>
+            <p className="text-blue-600 font-black uppercase tracking-widest text-[10px] mb-8">{loadingMilestone}</p>
             <p className="text-gray-500 font-medium max-w-sm text-center leading-relaxed">
-              We are combining web grounding with multi-modal vision to build your high-conversion assets.
+              We are merging multimodal vision with real-time web grounding to map your product strategy.
             </p>
           </div>
         )}

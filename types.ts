@@ -10,6 +10,14 @@ export enum ImageType {
   BRAND_STORY = 'Brand Story'
 }
 
+export interface User {
+  id: string;
+  name: string;
+  email: string;
+  brandName?: string;
+  avatar?: string;
+}
+
 export interface GroundingSource {
   title: string;
   uri: string;
@@ -46,6 +54,7 @@ export interface ListingImage {
 
 export interface HistoryItem {
   id: string;
+  userId: string; // Associated with a user
   timestamp: number;
   input: string;
   type: 'url' | 'asin' | 'image' | 'smart';
@@ -55,13 +64,14 @@ export interface HistoryItem {
 }
 
 export interface AppState {
-  step: 'input' | 'analyzing' | 'results';
+  step: 'login' | 'input' | 'analyzing' | 'results';
+  user?: User;
   activeHistoryId?: string;
   analysis?: ProductAnalysis;
   images: ListingImage[];
   error?: string;
   referenceImage?: string;
-  history: HistoryItem[];
+  history: HistoryItem[]; // Global loaded history for current user
   hasApiKey: boolean;
   inputSource?: {
     type: 'url' | 'asin' | 'image' | 'smart';
